@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL Database Service
+  #    ใช้สำหรับเก็บข้อมูลประวัติการเล่น (submissions table)
+  postgres:
+    image: postgres:14
+    restart: always
+    environment:
+      POSTGRES_DB: worddeedb            # ชื่อฐานข้อมูลที่ใช้
+      POSTGRES_USER: worddee_user       # ผู้ใช้สำหรับเชื่อมต่อ DB
+      POSTGRES_PASSWORD: bb05112545 # รหัสผ่านสำหรับเชื่อมต่อ DB
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data # เก็บข้อมูล DB ในเครื่อง (เพื่อข้อมูลไม่หายเมื่อ Docker หยุด)
+    ports:
+      - "5434:5432"                     # เปิดพอร์ต 5434 (5432 ใช้ไปแล้ว)
+
+  # 2. FastAPI Backend Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      N8N_SCORER_WEBHOOK: "http://n8n:5678/webhook/scorer"
+      N8N_SUMMARY_WEBHOOK: "http://n8n:5678/webhook/summary"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - n8n
+    networks:
+      - default
+
+  # 3. n8n Automation Service
+  #    ใช้สำหรับ Workflow, AI Scoring และบันทึก/ดึงข้อมูลจาก Postgres
+  n8n:
+    image: n8nio/n8n
+    restart: always
+    environment:
+      # --- การตั้งค่าสำหรับ n8n Internal Data (เพื่อให้ n8n ใช้ Postgres เป็น Database ภายใน) ---
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: worddeedb
+      DB_POSTGRESDB_USER: worddee_user
+      DB_POSTGRESDB_PASSWORD: bb05112545
+      # -----------------------------------------------------------------------------------------
+
+      # --- การตั้งค่าสำหรับ External Access และ Webhook ---
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5678/ # URL ที่ FastAPI จะใช้เรียก
+      
+      # !!! สำคัญ: ใส่ API Key ของคุณสำหรับเชื่อมต่อ AI (เช่น OpenAI) !!!
+      GEMINI_API_KEY: 'AIzaSyBRA-PKo6uYrzPNcOM8GkYNmXywWdhHH4w' 
+    ports:
+      - "5678:5678"                       # เปิดพอร์ต 5678 สำหรับเข้าถึง n8n Web UI
+    # การเชื่อมต่อใน Docker Network
+    links:
+      - postgres                        # ทำให้ n8n รู้จัก Service ชื่อ 'postgres'
+    depends_on:
+      - postgres                        # ตรวจสอบให้แน่ใจว่า postgres รันก่อน n8n
+
+  # 4. Caddy Reverse Proxy
+  caddy:
+    image: caddy:2
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./frontend:/srv
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - default
+    depends_on:
+      - backend
+
+volumes:
+  caddy_data:
+  caddy_config:
