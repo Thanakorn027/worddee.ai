@@ -962,6 +962,13 @@
                 </div>
             `;
 
+            resultsHTML += `
+                <div class="result-card success">
+                    <h3>🔎 เฉลยตัวอย่างที่ถูกต้อง</h3>
+                    <p>"${result.corrected_sentence}"</p>
+                </div>
+            `;
+
             document.getElementById('resultsContent').innerHTML = resultsHTML;
             showPage('resultsPage');
         }
